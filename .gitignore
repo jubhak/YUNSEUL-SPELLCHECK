@@ -1,0 +1,14 @@
+dist/
+build/
+payload/
+*.spec
+__pycache__/
+*.py[cod]
+*.log
+*.exe
+*.zip
+.venv/
+venv/
+.env
+.idea/
+.vscode/
