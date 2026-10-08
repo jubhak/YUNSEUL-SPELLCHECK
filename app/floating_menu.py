@@ -76,7 +76,34 @@ class FloatingMenu(QtWidgets.QWidget):
         sep1.setStyleSheet("background-color: #334155; max-width: 1px; margin: 4px 2px;")
         card_layout.addWidget(sep1)
 
-        # 2. 700px Native Korean OCR Button
+        # 2. Clipboard Direct Check Button
+        self.btn_clip = QtWidgets.QPushButton("📋 클립보드")
+        self.btn_clip.setToolTip("클립보드에 복사된 글을 즉시 검사합니다.")
+        self.btn_clip.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
+        self.btn_clip.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                border: none;
+                color: #E2E8F0;
+                font-size: 12px;
+                font-weight: 600;
+                font-family: 'Malgun Gothic', sans-serif;
+                padding: 4px 6px;
+            }
+            QPushButton:hover {
+                color: #38BDF8;
+            }
+        """)
+        self.btn_clip.clicked.connect(lambda: self._on_action_clicked("clipboard"))
+        card_layout.addWidget(self.btn_clip)
+
+        # Separator line
+        sep2 = QtWidgets.QFrame()
+        sep2.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+        sep2.setStyleSheet("background-color: #334155; max-width: 1px; margin: 4px 2px;")
+        card_layout.addWidget(sep2)
+
+        # 3. 700px Native Korean OCR Button
         self.btn_ocr = QtWidgets.QPushButton("📸 700px OCR")
         self.btn_ocr.setToolTip("마우스 커서 중심 700px 화면 영역의 글자를 윈도우 네이티브 OCR로 광학 인식합니다.")
         self.btn_ocr.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
@@ -100,12 +127,12 @@ class FloatingMenu(QtWidgets.QWidget):
         card_layout.addWidget(self.btn_ocr)
 
         # Separator line
-        sep2 = QtWidgets.QFrame()
-        sep2.setFrameShape(QtWidgets.QFrame.Shape.VLine)
-        sep2.setStyleSheet("background-color: #334155; max-width: 1px; margin: 4px 2px;")
-        card_layout.addWidget(sep2)
+        sep3 = QtWidgets.QFrame()
+        sep3.setFrameShape(QtWidgets.QFrame.Shape.VLine)
+        sep3.setStyleSheet("background-color: #334155; max-width: 1px; margin: 4px 2px;")
+        card_layout.addWidget(sep3)
 
-        # 3. Close button
+        # 4. Close button
         self.btn_close = QtWidgets.QPushButton("✕")
         self.btn_close.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
         self.btn_close.setFixedSize(22, 22)
@@ -124,10 +151,23 @@ class FloatingMenu(QtWidgets.QWidget):
             }
         """)
         self.btn_close.clicked.connect(self.hide)
-        card_layout.addWidget(self.btn_close)
-
         outer_layout.addWidget(self.card)
         self.adjustSize()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Apply WS_EX_NOACTIVATE so clicking floating menu never steals focus from the active prompt
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+            GWL_EXSTYLE = -20
+            WS_EX_NOACTIVATE = 0x08000000
+            cur = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            if not (cur & WS_EX_NOACTIVATE):
+                user32.SetWindowLongW(hwnd, GWL_EXSTYLE, cur | WS_EX_NOACTIVATE)
+        except Exception:
+            pass
 
     def popup_at(self, x, y, auto_hide_ms=5000):
         w = self.width() or 260

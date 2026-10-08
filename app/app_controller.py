@@ -161,6 +161,13 @@ class AppController(QtCore.QObject):
         self.floating_menu.popup_at(x, y)
 
     def _on_hotkey(self):
+        # Clear modifiers first so Alt key is not logically held down during keystrokes
+        import ctypes, time
+        user32 = ctypes.windll.user32
+        for vk in (0x12, 0x10, 0x11, 0x5B, 0x5C):
+            user32.keybd_event(vk, 0, 2, 0)
+        time.sleep(0.04)
+
         self.last_cursor_pos = (QtGui.QCursor.pos().x(), QtGui.QCursor.pos().y())
         self.last_target_hwnd = TextManager.get_foreground_window()
         self._trigger_spell_check("auto")
@@ -175,36 +182,29 @@ class AppController(QtCore.QObject):
             ocr_res = self.recognizer.get_text_via_ocr(x, y, width=700)
             text = ocr_res.get('text', '')
             selection_mode = "none"
+        # 2. If explicit Clipboard mode requested:
+        elif mode == "clipboard":
+            try:
+                text = pyperclip.paste().strip()
+            except Exception:
+                text = ""
+            selection_mode = "none"
+        # 3. Smart Hybrid Auto-Detection (Input field / Dragged Selection / UIA):
         else:
-            # 2. Smart Hybrid Auto-Detection:
-            # - Existing selection
-            # - Input field typing (Caret)
-            # - UI Automation under cursor (RangeFromPoint)
-            # - 700px Screen OCR fallback
-            detect_res = self.recognizer.smart_detect(x, y, target_hwnd=target_hwnd)
+            detect_res = self.recognizer.smart_detect(x, y, target_hwnd=target_hwnd, allow_ocr_fallback=False)
             text = detect_res.get('text', '')
             selection_mode = detect_res.get('selection_mode', 'none')
             if detect_res.get('target_hwnd'):
                 target_hwnd = detect_res.get('target_hwnd')
 
-        # Fallback to clipboard if nothing detected
         if not text:
-            try:
-                clip_text = pyperclip.paste().strip()
-                if clip_text and len(clip_text) < 500:
-                    text = clip_text
-                    selection_mode = "none"
-            except Exception:
-                pass
-
-        if not text:
-            self.main_window.show()
-            self.main_window.raise_()
-            self.main_window.activateWindow()
             QtWidgets.QMessageBox.information(
-                self.main_window,
+                None,
                 "윤슬 맞춤법 검사기",
-                "마우스 커서 근처에서 텍스트를 감지하지 못했습니다.\n검사할 문장을 입력창에 입력하시거나 직접 입력해 주세요."
+                "검사할 텍스트를 감지하지 못했습니다.\n\n"
+                "• 프롬프트나 입력창에 글을 작성 중이실 경우 커서를 올려두고 다시 시도해 주세요.\n"
+                "• 검사할 글자를 마우스로 드래그(선택)해 주시거나\n"
+                "• 화면 속 이미지/글자는 [📸 700px OCR] 버튼을 이용해 주세요."
             )
             return
 

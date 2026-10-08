@@ -207,13 +207,12 @@ class CursorTextRecognizer:
     # -------------------------------------------------------------
     # 스마트 하이브리드 자동 감지 (우선순위 체인)
     # -------------------------------------------------------------
-    def smart_detect(self, x: int, y: int, target_hwnd=None, forced_mode: str = None) -> dict:
+    def smart_detect(self, x: int, y: int, target_hwnd=None, forced_mode: str = None, allow_ocr_fallback: bool = False) -> dict:
         """
         우선순위에 따라 마우스 근처의 텍스트를 감지합니다:
-        1. 이미 선택된 텍스트가 있으면 최우선
-        2. 활성 입력창에서 작성 중이던 글 (방식 3)
-        3. UI Automation RangeFromPoint로 커서 아래 단어/문장 (방식 1)
-        4. 커서 중심 700px 화면 광학 문자 인식 OCR (방식 2)
+        1. 이미 선택된 텍스트가 있거나 입력창(프롬프트)에 작성 중인 글 (방식 3)
+        2. UI Automation RangeFromPoint로 커서 아래 단어/문장 (방식 1)
+        3. 명시적 요청 시 화면 광학 문자 인식 OCR (방식 2)
         """
         if forced_mode == "ocr":
             return self.get_text_via_ocr(x, y)
@@ -232,9 +231,10 @@ class CursorTextRecognizer:
         if res_uia['success'] and res_uia['text']:
             return res_uia
 
-        # 3. Fallback to 700px Screen OCR
-        res_ocr = self.get_text_via_ocr(x, y)
-        if res_ocr['success'] and res_ocr['text']:
-            return res_ocr
+        # 3. 700px Screen OCR fallback (only if explicitly enabled)
+        if allow_ocr_fallback:
+            res_ocr = self.get_text_via_ocr(x, y)
+            if res_ocr['success'] and res_ocr['text']:
+                return res_ocr
 
         return {'success': False, 'text': '', 'method': 'none'}
