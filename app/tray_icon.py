@@ -57,7 +57,7 @@ class SystemTrayIcon(QtWidgets.QSystemTrayIcon):
 
         self.action_drag = menu.addAction("✔️ 텍스트 드래그 퀵버튼 켜기")
         self.action_drag.setCheckable(True)
-        self.action_drag.setChecked(self.config.get('enable_drag_select', True))
+        self.action_drag.setChecked(self.config.get('enable_drag_select', False))
         self.action_drag.triggered.connect(self._on_toggle_drag)
 
         menu.addSeparator()

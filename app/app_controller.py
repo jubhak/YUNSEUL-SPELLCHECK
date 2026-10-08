@@ -12,11 +12,29 @@ from app.guideline_popup import GuidelinePopup
 from app.main_window import MainWindow
 from app.tray_icon import SystemTrayIcon
 
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.json")
+import sys
+
+def get_config_path() -> str:
+    # 1. Portable mode: next to exe
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+        portable_cfg = os.path.join(exe_dir, "config.json")
+        if os.path.exists(portable_cfg):
+            return portable_cfg
+    else:
+        dev_cfg = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config.json")
+        if os.path.exists(dev_cfg):
+            return dev_cfg
+
+    # 2. Persistent Windows AppData directory
+    appdata = os.environ.get("APPDATA") or os.path.expanduser("~")
+    cfg_dir = os.path.join(appdata, "YUNSEUL-SPELLCHECK")
+    os.makedirs(cfg_dir, exist_ok=True)
+    return os.path.join(cfg_dir, "config.json")
 
 DEFAULT_CONFIG = {
     "enable_right_click": True,
-    "enable_drag_select": True,
+    "enable_drag_select": False,  # Default False to prevent menu from popping up on ordinary mouse drags
     "close_to_tray": True,
     "start_minimized": False,
     "ocr_width": 700,
@@ -55,20 +73,22 @@ class AppController(QtCore.QObject):
         self._connect_signals()
 
     def _load_config(self) -> dict:
-        if os.path.exists(CONFIG_PATH):
+        cfg_path = get_config_path()
+        if os.path.exists(cfg_path):
             try:
-                with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+                with open(cfg_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     cfg = DEFAULT_CONFIG.copy()
                     cfg.update(data)
                     return cfg
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[Config] Error loading config: {e}")
         return DEFAULT_CONFIG.copy()
 
     def _save_config(self):
+        cfg_path = get_config_path()
         try:
-            with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+            with open(cfg_path, 'w', encoding='utf-8') as f:
                 json.dump(self.config, f, indent=2, ensure_ascii=False)
         except Exception as e:
             print(f"[Config] Error saving config: {e}")
@@ -103,14 +123,41 @@ class AppController(QtCore.QObject):
         if not self.config.get('start_minimized', False):
             self.main_window.show()
 
+    def _is_own_window(self, hwnd) -> bool:
+        if not hwnd:
+            return False
+        try:
+            own_hwnds = {
+                int(self.main_window.winId()),
+                int(self.floating_menu.winId()),
+                int(self.guideline_popup.winId())
+            }
+            if int(hwnd) in own_hwnds:
+                return True
+        except Exception:
+            pass
+        return False
+
     def _on_mouse_right_click(self, x, y):
+        # Strict guard: ignore if right click trigger is disabled
+        if not self.config.get('enable_right_click', True):
+            return
+        hwnd = TextManager.get_foreground_window()
+        if self._is_own_window(hwnd):
+            return
         self.last_cursor_pos = (x, y)
-        self.last_target_hwnd = TextManager.get_foreground_window()
+        self.last_target_hwnd = hwnd
         self.floating_menu.popup_at(x, y)
 
     def _on_mouse_drag_select(self, x, y):
+        # Strict guard: ignore if drag select trigger is disabled
+        if not self.config.get('enable_drag_select', False):
+            return
+        hwnd = TextManager.get_foreground_window()
+        if self._is_own_window(hwnd):
+            return
         self.last_cursor_pos = (x, y)
-        self.last_target_hwnd = TextManager.get_foreground_window()
+        self.last_target_hwnd = hwnd
         self.floating_menu.popup_at(x, y)
 
     def _on_hotkey(self):
@@ -193,16 +240,25 @@ class AppController(QtCore.QObject):
 
     def _on_toggle_right_click(self, enabled):
         self.config['enable_right_click'] = enabled
+        self.hook_manager.set_config(self.config)
+        self.main_window.chk_right_click.blockSignals(True)
+        self.main_window.chk_right_click.setChecked(enabled)
+        self.main_window.chk_right_click.blockSignals(False)
         self._save_config()
 
     def _on_toggle_drag_select(self, enabled):
         self.config['enable_drag_select'] = enabled
+        self.hook_manager.set_config(self.config)
+        self.main_window.chk_drag_select.blockSignals(True)
+        self.main_window.chk_drag_select.setChecked(enabled)
+        self.main_window.chk_drag_select.blockSignals(False)
         self._save_config()
 
     def _on_settings_changed(self, new_config):
         self.config.update(new_config)
+        self.hook_manager.set_config(self.config)
         self.tray_icon.action_right_click.setChecked(self.config.get('enable_right_click', True))
-        self.tray_icon.action_drag.setChecked(self.config.get('enable_drag_select', True))
+        self.tray_icon.action_drag.setChecked(self.config.get('enable_drag_select', False))
         self._save_config()
 
     def quit_app(self):

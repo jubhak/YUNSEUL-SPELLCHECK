@@ -49,6 +49,9 @@ class MouseHookManager:
                 pass
             self.hotkey_listener = None
 
+    def set_config(self, config: dict):
+        self.config = config
+
     def _on_hotkey(self):
         self.signals.hotkey_pressed.emit()
 
@@ -59,16 +62,20 @@ class MouseHookManager:
         else:
             # Button released
             if button == mouse.Button.right:
-                if self.config.get('enable_right_click', True):
-                    now = time.time()
-                    if now - self.last_trigger_time > 0.25:
-                        self.last_trigger_time = now
-                        self.signals.right_clicked.emit(int(x), int(y))
+                if not self.config.get('enable_right_click', True):
+                    return
+                now = time.time()
+                if now - self.last_trigger_time > 0.3:
+                    self.last_trigger_time = now
+                    self.signals.right_clicked.emit(int(x), int(y))
             elif button == mouse.Button.left:
+                if not self.config.get('enable_drag_select', False):
+                    return
                 dx = abs(x - self.down_pos[0])
                 dy = abs(y - self.down_pos[1])
-                if (dx > 25 or dy > 25) and self.config.get('enable_drag_select', True):
+                # Genuine drag threshold (ignore micro movements while clicking)
+                if (dx > 50 or dy > 35):
                     now = time.time()
-                    if now - self.last_trigger_time > 0.35:
+                    if now - self.last_trigger_time > 0.4:
                         self.last_trigger_time = now
                         self.signals.drag_selected.emit(int(x), int(y))

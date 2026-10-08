@@ -211,7 +211,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Checkbox: Drag selection trigger
         self.chk_drag_select = QtWidgets.QCheckBox("마우스로 텍스트 드래그(선택) 시 퀵 아이콘 띄우기")
-        self.chk_drag_select.setChecked(self.config.get('enable_drag_select', True))
+        self.chk_drag_select.setChecked(self.config.get('enable_drag_select', False))
         self.chk_drag_select.setStyleSheet("font-size: 13px; color: #334155;")
         self.chk_drag_select.stateChanged.connect(self._on_setting_changed)
         l_grp.addWidget(self.chk_drag_select)
