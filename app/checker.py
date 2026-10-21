@@ -103,18 +103,7 @@ class SpellCheckerEngine:
             return check_offline(text)
 
     def _check_chunks(self, text: str) -> dict:
-        lines = text.split('\n')
-        chunks = []
-        cur_chunk = ""
-        for line in lines:
-            if len(cur_chunk) + len(line) + 1 < 450:
-                cur_chunk += (line + '\n')
-            else:
-                if cur_chunk:
-                    chunks.append(cur_chunk)
-                cur_chunk = line + '\n'
-        if cur_chunk:
-            chunks.append(cur_chunk)
+        chunks = [text[i:i + 450] for i in range(0, len(text), 450)]
 
         combined_corrected = []
         combined_items = []
@@ -137,7 +126,7 @@ class SpellCheckerEngine:
             'is_offline': any_offline,
             'err_count': total_err_count,
             'original': text,
-            'corrected': "".join(combined_corrected).rstrip('\n'),
+            'corrected': "".join(combined_corrected),
             'items': combined_items,
             'counts': counts
         }

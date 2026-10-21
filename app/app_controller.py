@@ -5,6 +5,7 @@ from PyQt6 import QtWidgets, QtCore, QtGui
 
 from app.checker import SpellCheckerEngine
 from app.text_manager import TextManager
+from app.safe_job import SafeJob
 from app.cursor_recognizer import CursorTextRecognizer
 from app.mouse_hook import MouseHookManager
 from app.floating_menu import FloatingMenu
@@ -69,6 +70,10 @@ class AppController(QtCore.QObject):
         self.hook_manager = MouseHookManager(config=self.config)
         self.last_target_hwnd = None
         self.last_cursor_pos = (0, 0)
+        self.last_context = {}
+        self.jobs = SafeJob(self)
+        self.jobs.finished.connect(self._on_check_finished)
+        self.app.aboutToQuit.connect(self.jobs.shutdown)
 
         self._connect_signals()
 
@@ -147,6 +152,7 @@ class AppController(QtCore.QObject):
             return
         self.last_cursor_pos = (x, y)
         self.last_target_hwnd = hwnd
+        self.last_context = TextManager.capture_context(hwnd)
         self.floating_menu.popup_at(x, y)
 
     def _on_mouse_drag_select(self, x, y):
@@ -158,76 +164,48 @@ class AppController(QtCore.QObject):
             return
         self.last_cursor_pos = (x, y)
         self.last_target_hwnd = hwnd
+        self.last_context = TextManager.capture_context(hwnd)
         self.floating_menu.popup_at(x, y)
 
     def _on_hotkey(self):
-        # Clear modifiers first so Alt key is not logically held down during keystrokes
-        import ctypes, time
-        user32 = ctypes.windll.user32
-        for vk in (0x12, 0x10, 0x11, 0x5B, 0x5C):
-            user32.keybd_event(vk, 0, 2, 0)
-        time.sleep(0.04)
-
-        self.last_cursor_pos = (QtGui.QCursor.pos().x(), QtGui.QCursor.pos().y())
-        self.last_target_hwnd = TextManager.get_foreground_window()
+        # Reading via UIA needs no modifier release or simulated keyboard input.
+        hwnd = TextManager.get_foreground_window()
+        if self._is_own_window(hwnd):
+            return
+        pos = QtGui.QCursor.pos()
+        self.last_cursor_pos = (pos.x(), pos.y())
+        self.last_target_hwnd = hwnd
+        self.last_context = TextManager.capture_context(hwnd)
         self._trigger_spell_check("auto")
 
-    def _trigger_spell_check(self, mode: str = "auto"):
-        x, y = self.last_cursor_pos
-        target_hwnd = self.last_target_hwnd
-        selection_mode = "none"
-
-        # 1. If explicit OCR mode requested:
-        if mode == "ocr":
-            ocr_res = self.recognizer.get_text_via_ocr(x, y, width=700)
-            text = ocr_res.get('text', '')
-            selection_mode = "none"
-        # 2. If explicit Clipboard mode requested:
-        elif mode == "clipboard":
-            try:
-                text = pyperclip.paste().strip()
-            except Exception:
-                text = ""
-            selection_mode = "none"
-        # 3. Smart Hybrid Auto-Detection (Input field / Dragged Selection / UIA):
-        else:
-            detect_res = self.recognizer.smart_detect(x, y, target_hwnd=target_hwnd, allow_ocr_fallback=False)
-            text = detect_res.get('text', '')
-            selection_mode = detect_res.get('selection_mode', 'none')
-            if detect_res.get('target_hwnd'):
-                target_hwnd = detect_res.get('target_hwnd')
-
-        if not text:
-            QtWidgets.QMessageBox.information(
-                None,
-                "윤슬 맞춤법 검사기",
-                "검사할 텍스트를 감지하지 못했습니다.\n\n"
-                "• 프롬프트나 입력창에 글을 작성 중이실 경우 커서를 올려두고 다시 시도해 주세요.\n"
-                "• 검사할 글자를 마우스로 드래그(선택)해 주시거나\n"
-                "• 화면 속 이미지/글자는 [📸 700px OCR] 버튼을 이용해 주세요."
-            )
+    def _trigger_spell_check(self, mode="auto"):
+        if self.jobs.busy:
+            self.tray_icon.showMessage("윤슬 맞춤법 검사기", "검사가 진행 중입니다. 잠시 후 다시 시도해 주세요.")
             return
+        x, y = self.last_cursor_pos
+        payload = dict(self.last_context)
+        payload.update(kind=mode, x=x, y=y)
+        try:
+            if mode == "ocr":
+                payload['png'] = self.recognizer.capture_png(x, y)
+            elif mode == "clipboard":
+                payload['text'] = pyperclip.paste().strip()
+            self.jobs.start(payload)
+        except Exception as exc:
+            self._on_check_finished({'error': str(exc)})
 
-        # Perform check
-        result = self.engine.check(text)
-
-        # Show Guideline Popup
+    def _on_check_finished(self, reply):
+        error = reply.get('error')
+        if error:
+            QtWidgets.QMessageBox.information(None, "윤슬 맞춤법 검사기", error)
+            return
+        # UIA reading never selects a replacement range. Do not paste into a
+        # stale caret or accidentally overwrite the entire document.
         self.guideline_popup.show_guidelines(
-            result,
-            target_hwnd=target_hwnd,
-            selection_mode=selection_mode
-        )
+            reply['result'], target_hwnd=None, selection_mode="none")
 
     def _check_clipboard(self):
-        try:
-            text = pyperclip.paste().strip()
-            if not text:
-                QtWidgets.QMessageBox.information(None, "알림", "클립보드에 복사된 텍스트가 없습니다.")
-                return
-            result = self.engine.check(text)
-            self.guideline_popup.show_guidelines(result, target_hwnd=None, selection_mode="none")
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(None, "오류", f"클립보드 검사 중 오류: {e}")
+        self._trigger_spell_check("clipboard")
 
     def _show_main_window(self):
         self.main_window.show()
@@ -262,6 +240,7 @@ class AppController(QtCore.QObject):
         self._save_config()
 
     def quit_app(self):
+        self.jobs.shutdown()
         self.hook_manager.stop()
         self.tray_icon.hide()
         self._save_config()

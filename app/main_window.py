@@ -1,6 +1,7 @@
 from PyQt6 import QtWidgets, QtCore, QtGui
 from app.checker import SpellCheckerEngine
 from app.text_manager import TextManager
+from app.safe_job import SafeJob
 
 class MainWindow(QtWidgets.QMainWindow):
     settings_changed = QtCore.pyqtSignal(dict)
@@ -15,6 +16,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setMinimumSize(750, 550)
 
         self._init_ui()
+        self._jobs = SafeJob(self)
+        self._jobs.finished.connect(self._on_editor_checked)
+        QtWidgets.QApplication.instance().aboutToQuit.connect(self._jobs.shutdown)
+        self._job_text = ''
+        self._last_result = None
 
     def _init_ui(self):
         # Central widget with tabs
@@ -276,7 +282,7 @@ class MainWindow(QtWidgets.QMainWindow):
         lbl_info_desc = QtWidgets.QLabel(
             "1. 웹 브라우저(크롬, 엣지), 메모장, 카카오톡 등 어디서든 텍스트를 드래그하거나 작성 중 마우스 우클릭을 누르면 커서 위치에 [📝 맞춤법 검사] 메뉴가 나타납니다.\n"
             "2. 메뉴를 클릭하면 오타 및 띄어쓰기를 실시간 분석하여 친절한 가이드라인 팝업을 표시합니다.\n"
-            "3. [⚡ 원문에 바로 적용] 버튼을 누르면 작업 중이던 창의 오타가 올바른 문장으로 즉시 자동 치환됩니다.\n"
+            "3. 안전 모드에서는 교정문을 복사한 뒤 원문의 해당 문장만 선택하여 직접 붙여넣어 주세요.\n"
             "4. 전역 단축키 Alt + S 로도 언제든지 즉시 검사할 수 있습니다."
         )
         lbl_info_desc.setWordWrap(True)
@@ -296,10 +302,27 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, "알림", "검사할 문장을 입력해 주세요.")
             return
 
+        if self._jobs.busy:
+            return
+        if len(text) > 4000:
+            self.lbl_result_status.setText("편집기 검사는 한 번에 4,000자까지 가능합니다.")
+            return
         self.lbl_result_status.setText("검사 중...")
-        QtWidgets.QApplication.processEvents()
+        self._job_text = text
+        try:
+            self._jobs.start({'kind': 'clipboard', 'text': text})
+        except Exception as exc:
+            self.lbl_result_status.setText(str(exc))
 
-        res = self.spell_engine.check(text)
+    def _on_editor_checked(self, reply):
+        if reply.get('error'):
+            self.lbl_result_status.setText(reply['error'])
+            return
+        if self.edit_input.toPlainText().strip() != self._job_text:
+            self.lbl_result_status.setText("내용이 바뀌었습니다. 다시 검사해 주세요.")
+            return
+        res = reply['result']
+        self._last_result = res
         corrected = res.get('corrected', '')
         err_count = res.get('err_count', 0)
 
@@ -340,7 +363,10 @@ class MainWindow(QtWidgets.QMainWindow):
         text = self.edit_input.toPlainText()
         if not text:
             return
-        res = self.spell_engine.check(text)
+        res = self._last_result
+        if not res or text.strip() != res.get('original', ''):
+            self.lbl_result_status.setText("먼저 현재 내용을 검사해 주세요.")
+            return
         corr = res.get('corrected', '')
         if corr:
             TextManager.copy_to_clipboard(corr)

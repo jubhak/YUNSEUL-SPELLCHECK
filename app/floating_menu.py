@@ -51,7 +51,7 @@ class FloatingMenu(QtWidgets.QWidget):
 
         # 1. Main Action Button (Smart Auto: Caret / UIA / Selection)
         self.btn_check = QtWidgets.QPushButton("📝 맞춤법 검사")
-        self.btn_check.setToolTip("커서 입력글 / 선택영역 / 커서 위치 단어를 자동 인식하여 검사합니다.")
+        self.btn_check.setToolTip("입력 커서 기준 한 문장만 안전하게 읽습니다. 전체 선택이나 복사 단축키를 보내지 않습니다.")
         self.btn_check.setCursor(QtGui.QCursor(QtCore.Qt.CursorShape.PointingHandCursor))
         self.btn_check.setStyleSheet("""
             QPushButton {

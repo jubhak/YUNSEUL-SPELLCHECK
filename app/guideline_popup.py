@@ -310,7 +310,8 @@ class GuidelinePopup(QtWidgets.QWidget):
         else:
             self.lbl_status.setText(f"⚠️ 총 {err_count}개의 교정 항목이 발견되었습니다.")
             self.lbl_status.setStyleSheet("font-size: 13px; font-weight: 700; color: #DC2626;")
-            self.btn_replace.setEnabled(True)
+            self.btn_replace.setEnabled(False)
+            self.btn_replace.setToolTip("안전 모드: 교정문을 복사한 뒤 원문의 해당 문장만 선택하여 붙여넣어 주세요.")
 
             # Badges
             if result.get('is_offline'):
@@ -406,11 +407,7 @@ class GuidelinePopup(QtWidgets.QWidget):
     def _on_replace_clicked(self):
         if not self.current_result:
             return
-        corrected = self.current_result.get('corrected', '')
-        if corrected:
-            self.was_replaced = True
-            self.hide()
-            TextManager.replace_selected_text(corrected, self.target_hwnd, self.selection_mode)
+        self._on_copy_clicked()
 
     def _on_copy_clicked(self):
         if not self.current_result:

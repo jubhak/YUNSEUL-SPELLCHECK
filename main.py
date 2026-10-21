@@ -73,4 +73,8 @@ def main():
         run_app()
 
 if __name__ == "__main__":
+    # Must run before setup-mode detection, mutex creation or QApplication.
+    # Frozen multiprocessing workers otherwise reopen the installer/application.
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()
